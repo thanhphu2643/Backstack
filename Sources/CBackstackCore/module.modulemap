@@ -1,0 +1,5 @@
+module CBackstackCore {
+    header "backstack_core.h"
+    link "backstack_core"
+    export *
+}
