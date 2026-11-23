@@ -5,6 +5,10 @@ backups on your Mac and in S3-compatible buckets, shows what is inside each one,
 of them table by table, and restores one into PostgreSQL (a Docker container or any server)
 with a single click.
 
+![Backstack showing the backups of several tenants, the tables and row counts inside one backup, and a comparison with an older backup](docs/screenshot.png)
+
+<sub>Screenshot taken with demo data.</sub>
+
 The scanning, reading and restoring live in a Rust library (`core/`); the SwiftUI app
 (`Sources/Backstack`) calls it through a small C interface that exchanges JSON.
 
