@@ -506,7 +506,19 @@ struct RestoreSheet: View {
 struct DatabasesView: View {
     @Environment(Store.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var pendingDrop: Database?
+    @State private var pendingDrop: [Database] = []
+    @State private var checked: Set<String> = []
+
+    private var checkedDatabases: [Database] { store.databases.filter { checked.contains($0.name) } }
+    private var allChecked: Binding<Bool> {
+        .init(get: { !store.databases.isEmpty && checked.count == store.databases.count },
+              set: { checked = $0 ? Set(store.databases.map(\.name)) : [] })
+    }
+    private var dropTitle: String {
+        pendingDrop.count == 1
+            ? t("Drop database \(pendingDrop[0].name)?", "Xoá database \(pendingDrop[0].name)?")
+            : t("Drop \(pendingDrop.count) databases?", "Xoá \(pendingDrop.count) database?")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -524,36 +536,56 @@ struct DatabasesView: View {
                 Text(e).foregroundStyle(.red).textSelection(.enabled)
             }
             Table(store.databases) {
+                TableColumn("") { db in
+                    Toggle("", isOn: .init(get: { checked.contains(db.name) },
+                                           set: { if $0 { checked.insert(db.name) } else { checked.remove(db.name) } }))
+                        .labelsHidden()
+                        .disabled(!store.target.canDrop)
+                }
+                .width(20)
                 TableColumn(t("Name", "Tên")) { Text($0.name).font(.body.monospaced()) }
                 TableColumn(t("Size", "Dung lượng")) { Text(formatBytes($0.size)).monospacedDigit() }.width(100)
                 TableColumn("") { db in
-                    Button(role: .destructive) { pendingDrop = db } label: { Image(systemName: "trash") }
+                    Button(role: .destructive) { pendingDrop = [db] } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
                         .disabled(!store.target.canDrop)
                 }
                 .width(30)
             }
             .frame(height: 360)
+            .onChange(of: store.databases) { checked.formIntersection(store.databases.map(\.name)) }
             HStack {
+                if store.target.canDrop {
+                    Toggle(t("All", "Tất cả"), isOn: allChecked).disabled(store.databases.isEmpty)
+                }
                 let total = formatBytes(store.databases.reduce(0) { $0 + $1.size })
                 Text(t("Total \(total)", "Tổng \(total)")).foregroundStyle(.secondary)
                 if !store.target.canDrop {
                     Text(t("· this server does not allow dropping", "· server này không cho xoá")).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if !checked.isEmpty {
+                    let size = formatBytes(checkedDatabases.reduce(0) { $0 + $1.size })
+                    Button(t("Drop \(checked.count) (\(size))", "Xoá \(checked.count) (\(size))"), role: .destructive) {
+                        pendingDrop = checkedDatabases
+                    }
+                }
                 Button(t("Close", "Đóng")) { dismiss() }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(width: 580)
-        .confirmationDialog(t("Drop database \(pendingDrop?.name ?? "")?", "Xoá database \(pendingDrop?.name ?? "")?"),
-                            isPresented: .init(get: { pendingDrop != nil }, set: { if !$0 { pendingDrop = nil } })) {
+        .confirmationDialog(dropTitle,
+                            isPresented: .init(get: { !pendingDrop.isEmpty }, set: { if !$0 { pendingDrop = [] } })) {
             Button(t("Drop permanently", "Xoá vĩnh viễn"), role: .destructive) {
-                if let db = pendingDrop { Task { await store.drop(db) } }
+                let dbs = pendingDrop
+                checked.subtract(dbs.map(\.name))
+                Task { await store.drop(dbs) }
             }
         } message: {
-            Text(t("On \(store.target.detail). Open connections to this database are closed.",
-                   "Trên \(store.target.detail). Các kết nối đang mở tới database này sẽ bị ngắt."))
+            let list = pendingDrop.count > 1 ? pendingDrop.map(\.name).joined(separator: "\n") + "\n\n" : ""
+            Text(list + t("On \(store.target.detail). Open connections to these databases are closed.",
+                          "Trên \(store.target.detail). Các kết nối đang mở tới các database này sẽ bị ngắt."))
         }
     }
 }

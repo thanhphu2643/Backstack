@@ -215,14 +215,26 @@ final class Store {
 
     // MARK: cleanup
 
-    func drop(_ db: Database) async {
+    /// Drops each database in turn; one failure does not stop the rest.
+    func drop(_ dbs: [Database]) async {
         let access = PGAccess(target)
-        do {
-            try await Task.detached { try Core.drop(access, database: db.name) }.value
-            notice = t("Dropped database \(db.name)", "Đã xoá database \(db.name)")
-        } catch {
-            self.error = error.localizedDescription
+        var dropped: [String] = []
+        var failures: [String] = []
+        for db in dbs {
+            do {
+                try await Task.detached { try Core.drop(access, database: db.name) }.value
+                dropped.append(db.name)
+            } catch {
+                failures.append("\(db.name): \(error.localizedDescription)")
+            }
         }
+        if !dropped.isEmpty {
+            let what = dropped.count == 1 ? dropped[0] : "\(dropped.count)"
+            notice = dropped.count == 1
+                ? t("Dropped database \(what)", "Đã xoá database \(what)")
+                : t("Dropped \(what) databases", "Đã xoá \(what) database")
+        }
+        if !failures.isEmpty { self.error = failures.joined(separator: "\n") }
         await loadDatabases()
     }
 
